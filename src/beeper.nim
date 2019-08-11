@@ -116,7 +116,7 @@ proc writeCallback_f32(
 const requestedSpec = RequestedSpec(
   freq: 44100,
   format: AUDIO_S16,
-  samples: 4096,
+  samples: 512,
   channels: 1,
   padding: 0,
   callback: writeCallback_s16
