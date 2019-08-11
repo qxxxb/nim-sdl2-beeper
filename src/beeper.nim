@@ -65,11 +65,21 @@ proc sine_f32(): float32 =
 
 # ---
 
+## Procedural type specifying the actual audio callback
+var audioCallbackImpl: AudioCallback
+
+proc audioCallback(
+  userdata: pointer,
+  stream: ptr uint8,
+  len: cint
+) {.cdecl.} =
+  audioCallbackImpl(userdata, stream, len)
+
 # The sample size is the size specified in format multiplied by the number of
 # channels. That means each sample contains data for each sample. Channel data
 # is interleaved.
 
-proc writeCallback_s16(
+proc audioCallback_s16(
   userdata: pointer,
   stream: ptr uint8,
   len: cint
@@ -90,7 +100,7 @@ proc writeCallback_s16(
 
     state.sample.inc()
 
-proc writeCallback_f32(
+proc audioCallback_f32(
   userdata: pointer,
   stream: ptr uint8,
   len: cint
@@ -119,7 +129,7 @@ const requestedSpec = RequestedSpec(
   samples: 512,
   channels: 1,
   padding: 0,
-  callback: writeCallback_s16
+  callback: audioCallback
 )
 
 # ---
@@ -149,8 +159,8 @@ proc init*() =
   debug("[beeper][init] size: ", obtainedSpec.size)
 
   case obtainedSpec.format
-  of AUDIO_S16: obtainedSpec.callback = writeCallback_s16
-  of AUDIO_F32: obtainedSpec.callback = writeCallback_f32
+  of AUDIO_S16: audioCallbackImpl = audioCallback_s16
+  of AUDIO_F32: audioCallbackImpl = audioCallback_f32
   else:
     throw "Unsupported audio format: " & $obtainedSpec.format
 
