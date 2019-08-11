@@ -13,36 +13,11 @@ template throw(msg: string) =
 
 type RequestedSpec = object
   freq: int ## Sample rate, units: Hz
+  format: AudioFormat ## E.g. ``AUDIO_S16``, ``AUDIO_F32``
   samples: uint16 ## Buffer size in samples
   channels: uint8
   padding: uint16
-
-const requestedSpec = RequestedSpec(
-  freq: 44100,
-  samples: 4096,
-  channels: 1,
-  padding: 0
-)
-
-# Expected audio settings. If these are not supported an error will be thrown
-# in `init`
-
-type ExpectedSpec = object
-  format: AudioFormat
-  bitDepth: int
-
-const expectedSpec = ExpectedSpec(
-  format: AUDIO_S16,
-  bitDepth: 16
-)
-
-proc check(obtained: AudioSpec) =
-  if obtained.format != expectedSpec.format:
-    throw("Couldn't open 16 bit audio channel")
-
-proc bytesPerSample(): int =
-  const bitsInByte = 8
-  expectedSpec.bitDepth div bitsInByte
+  callback: AudioCallback
 
 # ---
 
@@ -54,11 +29,13 @@ var obtainedSpec: AudioSpec
 type State = object
   freq: int ## Units: Hz
   volume: float ## Range: [0 .. 1]
-  pos: int ## Current playback position
+  sample: int ## Current playback position, units: samples
 
 var state: State
 
-proc sine(): int16 =
+# ---
+
+proc sine_s16(): int16 =
   ## Generate sine wave
 
   let sampleRate = obtainedSpec.freq.tofloat()
@@ -66,50 +43,116 @@ proc sine(): int16 =
   # Units: samples
   let period = sampleRate / state.freq.toFloat()
 
-  let pos = (state.pos mod period.int()).toFloat()
+  let x = (state.sample mod period.int()).toFloat()
   let angular_freq = (1 / period) * 2 * PI
   let amplitude = (int16.high().toFloat() * state.volume)
 
-  round(sin(pos * angular_freq) * amplitude).int16()
+  round(sin(x * angular_freq) * amplitude).int16()
 
-proc writeCallback(
+proc sine_f32(): float32 =
+  ## Generate sine wave
+
+  let sampleRate = obtainedSpec.freq.tofloat()
+
+  # Units: samples
+  let period = sampleRate / state.freq.toFloat()
+
+  let x = (state.sample mod period.int()).toFloat()
+  let angular_freq = (1 / period) * 2 * PI
+  let amplitude = state.volume
+
+  sin(x * angular_freq) * amplitude
+
+# ---
+
+# The sample size is the size specified in format multiplied by the number of
+# channels. That means each sample contains data for each sample. Channel data
+# is interleaved.
+
+proc writeCallback_s16(
   userdata: pointer,
   stream: ptr uint8,
   len: cint
 ) {.cdecl.} =
-  for i in 0 ..< int16(obtainedSpec.samples):
-    var ptrSample = cast[ptr int16](
-      cast[ByteAddress](stream) + i * bytesPerSample()
-    )
+  for sample in 0 ..< obtainedSpec.samples.int():
+    let data = sine_s16()
 
-    ptrSample[] = sine()
+    for channel in 0 ..< obtainedSpec.channels.int():
+      let offset =
+        (sample * int16.sizeof() * obtainedSpec.channels.int()) +
+        (channel * int16.sizeof())
 
-    state.pos.inc()
+      var ptrData = cast[ptr int16](
+        cast[ByteAddress](stream) + offset
+      )
+
+      ptrData[] = data
+
+    state.sample.inc()
+
+proc writeCallback_f32(
+  userdata: pointer,
+  stream: ptr uint8,
+  len: cint
+) {.cdecl.} =
+  for sample in 0 ..< obtainedSpec.samples.int():
+    let data = sine_f32()
+
+    for channel in 0 ..< obtainedSpec.channels.int():
+      let offset =
+        (sample * float32.sizeof() * obtainedSpec.channels.int()) +
+        (channel * float32.sizeof())
+
+      var ptrData = cast[ptr float32](
+        cast[ByteAddress](stream) + offset
+      )
+
+      ptrData[] = data
+
+    state.sample.inc()
+
+# ---
+
+const requestedSpec = RequestedSpec(
+  freq: 44100,
+  format: AUDIO_S16,
+  samples: 4096,
+  channels: 1,
+  padding: 0,
+  callback: writeCallback_s16
+)
+
+# ---
 
 proc init*() =
   # Init audio playback
   if init(INIT_AUDIO) != SdlSuccess:
-    throw("Couldn't initialize SDL")
+    throw "Couldn't initialize SDL"
 
   var requested = AudioSpec(
     freq: requestedSpec.freq.cint(),
-    format: expectedSpec.format,
+    format: requestedSpec.format,
     channels: requestedSpec.channels,
     samples: requestedSpec.samples,
     padding: requestedSpec.padding,
-    callback: writeCallback
+    callback: requestedSpec.callback
   )
 
   if openAudio(requested.addr(), obtainedSpec.addr()) != 0:
-    throw("Couldn't open audio device" & $getError())
+    throw "Couldn't open audio device" & $getError()
 
   debug("[beeper][init] frequency: ", obtainedSpec.freq)
   debug("[beeper][init] format: ", obtainedSpec.format)
   debug("[beeper][init] channels: ", obtainedSpec.channels)
   debug("[beeper][init] samples: ", obtainedSpec.samples)
   debug("[beeper][init] padding: ", obtainedSpec.padding)
+  debug("[beeper][init] size: ", obtainedSpec.size)
 
-  obtainedSpec.check()
+  case obtainedSpec.format
+  of AUDIO_S16: obtainedSpec.callback = writeCallback_s16
+  of AUDIO_F32: obtainedSpec.callback = writeCallback_f32
+  else:
+    throw "Unsupported audio format: " & $obtainedSpec.format
 
 proc quit*() = sdl2.quit()
 
