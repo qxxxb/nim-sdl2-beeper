@@ -3,32 +3,32 @@ import
   os,
   times,
   logging,
+  sdl2,
   ./beeper
 
 suite "Beeper":
-  addHandler(newConsoleLogger())
-  beeper.init()
 
   test "simple":
-    setFrequency(440)
-    setVolume(0.5)
+    addHandler(newConsoleLogger())
 
-    block:
-      let start = getTime()
-      play()
-      sleep(2000)
-      stop()
-      info("[simple]: duration: ", getTime() - start)
+    if sdl2.init(INIT_AUDIO) != SdlSuccess:
+      raise AudioError.newException "Couldn't initialize SDL2 audio"
 
-    sleep(1000)
-    setFrequency(600)
-    setVolume(0.75)
+    beeper.open()
+    beeper.setVolume(1.0)
+    beeper.play()
 
-    block:
-      let start = getTime()
-      play()
-      sleep(1000)
-      stop()
-      info("[simple]: duration: ", getTime() - start)
+    const c4 = 261.63
+    const e4 = 329.63
+    const g4 = 392.00
 
-  beeper.quit()
+    beeper.setFrequency(c4)
+    sleep(500)
+    beeper.setFrequency(e4)
+    sleep(500)
+    beeper.setFrequency(g4)
+    sleep(500)
+
+    beeper.stop()
+    beeper.close()
+    sdl2.quit()
