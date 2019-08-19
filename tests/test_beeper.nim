@@ -7,14 +7,13 @@ import
   ./beeper
 
 suite "Beeper":
+  if sdl2.init(INIT_AUDIO) != SdlSuccess:
+    raise AudioError.newException "Couldn't initialize SDL2 audio"
+
+  beeper.open()
+  addHandler(newConsoleLogger())
 
   test "simple":
-    addHandler(newConsoleLogger())
-
-    if sdl2.init(INIT_AUDIO) != SdlSuccess:
-      raise AudioError.newException "Couldn't initialize SDL2 audio"
-
-    beeper.open()
     beeper.setVolume(1.0)
     beeper.play()
 
@@ -30,5 +29,6 @@ suite "Beeper":
     sleep(500)
 
     beeper.stop()
-    beeper.close()
-    sdl2.quit()
+
+  beeper.close()
+  sdl2.quit()
