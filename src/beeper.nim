@@ -2,7 +2,9 @@ import
   sdl2,
   sdl2/audio,
   math,
-  logging
+  logging,
+  times,
+  options
 
 type AudioError* = object of Exception
 
@@ -15,11 +17,25 @@ var obtainedSpec: AudioSpec
 
 # ---
 
+type ModulationDurations* = object
+  ## Play the sound on and off repeatedly
+  on*: Duration
+  off*: Duration
+
+type ModulationState = object
+  lastTime: Time ## Most recent time of transition from on to off or vice versa
+  on: bool ## Whether sound is currently playing or not
+
+type Modulation = object
+  durations: ModulationDurations
+  state: ModulationState
+
 type State = object
   deviceId: AudioDeviceID
   freq: float ## Units: Hz
   volume: float ## Range: [0 .. 1]
   pos: int ## Current playback position, units: samples
+  modulation: Option[Modulation]
 
 var state: State
 
@@ -59,7 +75,7 @@ proc writeData_f32(
 # ---
 # Generate audio data. This is how the waveform is generated.
 
-proc getData(): float =
+proc getSineData(): float =
   ## Generate a sine wave
 
   let sampleRate = obtainedSpec.freq.toFloat()
@@ -78,6 +94,33 @@ proc getData(): float =
   let amplitude = state.volume
 
   sin(pos * angular_freq) * amplitude
+
+proc getData(): float =
+  ## Generate a modulated sine wave
+
+  if state.modulation.isNone():
+    getSineData()
+  else:
+    template modulation: untyped = state.modulation.get()
+
+    let now = times.getTime()
+    let elapsed = now - modulation.state.lastTime
+
+    case modulation.state.on
+    of true:
+      if elapsed > modulation.durations.on:
+        modulation.state.lastTime = now
+        modulation.state.on = false
+        0.0
+      else:
+        getSineData()
+    of false:
+      if elapsed > modulation.durations.off:
+        modulation.state.lastTime = now
+        modulation.state.on = true
+        getSineData()
+      else:
+        0
 
 var calculateOffset: proc (sample, channel: int): int
 var writeData: proc (ptrData: ptr float, data: float)
@@ -151,3 +194,17 @@ proc setFrequency*(frequency: float) =
 proc setVolume*(volume: float) =
   assert (volume >= 0.0) and (volume <= 1.0)
   state.volume = volume
+
+proc setModulationDurations*(modulationDurations: ModulationDurations) =
+  template md: untyped = modulationDurations
+
+  if state.modulation.isSome():
+    state.modulation.get().durations = md
+  else:
+    state.modulation = Modulation(
+      durations: md,
+      state: ModulationState()
+    ).some()
+
+proc disableModulation*() =
+  state.modulation = Modulation.none()

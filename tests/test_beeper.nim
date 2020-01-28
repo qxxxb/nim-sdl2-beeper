@@ -30,5 +30,18 @@ suite "Beeper":
 
     beeper.stop()
 
+  test "modulated":
+    beeper.setVolume(0.8)
+    beeper.setFrequency(600)
+    beeper.setModulationDurations(
+      ModulationDurations(
+        on: initDuration(milliseconds = 50),
+        off: initDuration(milliseconds = 50)
+      )
+    )
+    beeper.play()
+    sleep(2000)
+    beeper.stop()
+
   beeper.close()
   sdl2.quit()
