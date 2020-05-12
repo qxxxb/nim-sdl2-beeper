@@ -7,7 +7,7 @@ import
   options,
   locks
 
-type AudioError* = object of Exception
+type AudioError* = object of ValueError
 
 template throw(msg: string) =
   raise AudioError.newException(msg)
