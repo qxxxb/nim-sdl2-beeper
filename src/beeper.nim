@@ -197,14 +197,20 @@ proc play*() = pauseAudioDevice(state.deviceId, 0)
 proc stop*() = pauseAudioDevice(state.deviceId, 1)
 
 proc setFrequency*(frequency: float) =
+  acquire(stateLock)
   state.freq = frequency
+  release(stateLock)
 
 proc setVolume*(volume: float) =
   assert (volume >= 0.0) and (volume <= 1.0)
+  acquire(stateLock)
   state.volume = volume
+  release(stateLock)
 
 proc setModulationDurations*(modulationDurations: ModulationDurations) =
   template md: untyped = modulationDurations
+
+  acquire(stateLock)
 
   if state.modulation.isSome():
     state.modulation.get().durations = md
@@ -214,5 +220,9 @@ proc setModulationDurations*(modulationDurations: ModulationDurations) =
       state: ModulationState()
     ).some()
 
+  release(stateLock)
+
 proc disableModulation*() =
+  acquire(stateLock)
   state.modulation = Modulation.none()
+  release(stateLock)
