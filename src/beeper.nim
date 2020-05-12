@@ -4,7 +4,8 @@ import
   math,
   logging,
   times,
-  options
+  options,
+  locks
 
 type AudioError* = object of Exception
 
@@ -38,6 +39,11 @@ type State = object
   modulation: Option[Modulation]
 
 var state: State
+
+# We need this lock to prevent users from changing state (e.g. `setModulation`)
+# while the audio callback is running
+var stateLock: Lock
+initLock(stateLock)
 
 # ---
 # Calculate the offset in bytes from the start of the audio stream to the
@@ -135,8 +141,10 @@ proc audioCallback(
   # Write data to the entire buffer by iterating through all samples and
   # channels.
   for sample in 0 ..< obtainedSpec.samples.int():
+    acquire(stateLock)
     let data = getData()
     state.pos.inc()
+    release(stateLock)
 
     # Write the same data to all channels
     for channel in 0 ..< obtainedSpec.channels.int():
